@@ -51,32 +51,47 @@ function getGreeting(): string {
 
 function AreaCard({ area }: { area: Area }) {
   const navigate = useNavigate();
-  const config = AREA_CONFIG[area];
-  const Icon = AREA_ICONS[area];
+  const config    = AREA_CONFIG[area];
+  const Icon      = AREA_ICONS[area];
   const taskCount = useStore((s) => s.tasks.filter((t) => t.area === area && !t.done).length);
 
   return (
-    <Card onClick={() => navigate(`/area/${area}`)} className="group">
-      <div className="flex items-start justify-between">
+    <button
+      onClick={() => navigate(`/area/${area}`)}
+      className="relative overflow-hidden rounded-card p-4 text-left transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+      style={{
+        background: `linear-gradient(135deg, ${config.color}14 0%, ${config.color}06 100%)`,
+        border: `1px solid ${config.color}22`,
+      }}
+    >
+      {/* Glow de canto */}
+      <div
+        className="absolute -top-6 -right-6 w-16 h-16 rounded-full pointer-events-none"
+        style={{ background: `radial-gradient(circle, ${config.color}20, transparent 70%)` }}
+      />
+      <div className="flex items-start justify-between mb-3">
         <div
-          className="w-9 h-9 rounded-btn flex items-center justify-center"
-          style={{ backgroundColor: `${config.color}1A`, color: config.color }}
+          className="w-8 h-8 rounded-btn flex items-center justify-center"
+          style={{ backgroundColor: `${config.color}1F`, color: config.color }}
         >
-          <Icon size={18} />
+          <Icon size={16} />
         </div>
         {taskCount > 0 && (
           <span
-            className="text-xs font-semibold px-1.5 py-0.5 rounded-full"
-            style={{ backgroundColor: `${config.color}22`, color: config.color }}
+            className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+            style={{ backgroundColor: `${config.color}25`, color: config.color }}
           >
             {taskCount}
           </span>
         )}
       </div>
-      <p className="mt-2 text-sm font-semibold" style={{ color: config.color }}>
+      <p className="text-sm font-semibold" style={{ color: config.color }}>
         {config.label}
       </p>
-    </Card>
+      <p className="text-xs mt-0.5" style={{ color: `${config.color}80` }}>
+        {taskCount === 0 ? 'Sem pendencias' : `${taskCount} pendente${taskCount > 1 ? 's' : ''}`}
+      </p>
+    </button>
   );
 }
 
@@ -94,18 +109,29 @@ export function Dashboard() {
 
   return (
     <div className="flex-1 overflow-y-auto pb-28">
-      <div className="max-w-lg mx-auto px-4 pt-6 space-y-6">
+      <div className="max-w-lg mx-auto px-4 space-y-6">
 
-        {/* Header */}
-        <div className="space-y-1">
-          <p className="text-text-secondary text-sm capitalize">{today}</p>
+        {/* Header com gradiente sutil */}
+        <div
+          className="relative pt-8 pb-5 -mx-4 px-4 mb-2"
+          style={{
+            background: 'linear-gradient(180deg, rgba(46,111,255,0.06) 0%, transparent 100%)',
+            borderBottom: '1px solid rgba(255,255,255,0.04)',
+          }}
+        >
+          <p className="text-text-secondary text-sm capitalize mb-0.5">{today}</p>
           <h1 className="font-display text-2xl text-text-primary">
             {getGreeting()}{userName ? `, ${userName}` : ''}
           </h1>
           {mood && (
-            <div className="flex items-center gap-1.5 mt-1 text-xs text-text-secondary">
-              <MoodIcon size={13} />
-              <span>{MOOD_LABELS[mood]}</span>
+            <div className="flex items-center gap-1.5 mt-2">
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+                style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
+              >
+                <MoodIcon size={12} className="text-text-secondary" />
+                <span className="text-xs text-text-secondary">{MOOD_LABELS[mood]}</span>
+              </div>
             </div>
           )}
         </div>
@@ -147,7 +173,7 @@ export function Dashboard() {
         {/* Foco de Hoje */}
         <section>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-widest">
+            <h2 className="text-xs font-semibold text-text-muted uppercase tracking-[0.12em]">
               Foco de hoje
             </h2>
             {todayTasks.length > 0 && (
@@ -177,7 +203,7 @@ export function Dashboard() {
         {/* Eventos de Hoje */}
         {todayEvents.length > 0 && (
           <section>
-            <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-widest mb-3">
+            <h2 className="text-xs font-semibold text-text-muted uppercase tracking-[0.12em] mb-3">
               Compromissos de hoje
             </h2>
             <div className="space-y-2">
@@ -222,7 +248,7 @@ export function Dashboard() {
         {/* Areas */}
         {mood !== 'LOW' && (
           <section>
-            <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-widest mb-3">
+            <h2 className="text-xs font-semibold text-text-muted uppercase tracking-[0.12em] mb-3">
               Areas
             </h2>
             <div className="grid grid-cols-2 gap-3">
