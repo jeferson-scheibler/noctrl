@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Battery, BatteryMedium, BatteryLow } from 'lucide-react';
 import { useStore } from '../../store';
 import type { Mood } from '../../types';
+import { JarvisOrb } from './JarvisOrb';
 
 interface MoodOption {
   mood: Mood;
@@ -66,9 +67,15 @@ export function MoodCheckin() {
   }
 
   return (
-    <div className="min-h-dvh bg-bg-primary flex flex-col items-center justify-center p-6 animate-fade-in">
+    <div className="min-h-dvh bg-bg-primary flex flex-col items-center justify-center p-6 animate-fade-in overflow-hidden">
       <div className="w-full max-w-sm space-y-8">
 
+        {/* Assistente visual */}
+        <div className="flex justify-center pt-2">
+          <JarvisOrb />
+        </div>
+
+        {/* Saudacao e pergunta */}
         <div className="space-y-1">
           <p className="text-text-secondary text-sm font-medium tracking-wide uppercase">
             {getGreeting()}{userName ? `, ${userName}` : ''}
@@ -81,6 +88,7 @@ export function MoodCheckin() {
           </p>
         </div>
 
+        {/* Campo de nome (primeiro acesso) */}
         {showNameForm && (
           <form onSubmit={handleNameSubmit} className="space-y-3 animate-slide-up">
             <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wide">
@@ -107,6 +115,7 @@ export function MoodCheckin() {
           </form>
         )}
 
+        {/* Opcoes de mood */}
         <div className="space-y-3">
           {OPTIONS.map(({ mood, label, description, sublabel, Icon, color }) => {
             const isHovered = hoveredMood === mood;
@@ -127,10 +136,7 @@ export function MoodCheckin() {
               >
                 <div
                   className="w-10 h-10 rounded-btn flex items-center justify-center flex-shrink-0 transition-colors duration-200"
-                  style={{
-                    backgroundColor: `${color}1A`,
-                    color,
-                  }}
+                  style={{ backgroundColor: `${color}1A`, color }}
                 >
                   <Icon size={20} />
                 </div>
