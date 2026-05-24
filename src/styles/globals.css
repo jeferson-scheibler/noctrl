@@ -1,0 +1,113 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&family=Inter:wght@400;500;600&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary: #0A0A0C;
+  --bg-surface: #141418;
+  --bg-elevated: #1E1E24;
+  --accent-blue: #2E6FFF;
+  --accent-glow: #5B9FFF;
+  --area-work: #7C6FFF;
+  --area-personal: #FF6B6B;
+  --area-study: #FFD166;
+  --area-finance: #06D6A0;
+  --text-primary: #F0F0F5;
+  --text-secondary: #5A5A6E;
+  --text-muted: #3A3A4A;
+  --border-subtle: rgba(255, 255, 255, 0.06);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior: none;
+}
+
+#root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  margin: 0;
+}
+
+p, span, label, input, textarea, button {
+  font-family: 'Inter', sans-serif;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
+}
+
+input, textarea {
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+}
+
+textarea {
+  resize: none;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border-radius: 2px;
+}
+
+::selection {
+  background: rgba(46, 111, 255, 0.3);
+}
+
+@layer utilities {
+  .border-subtle {
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .glow-active {
+    box-shadow: 0 0 20px rgba(46, 111, 255, 0.3);
+  }
+
+  .glow-sm {
+    box-shadow: 0 0 10px rgba(46, 111, 255, 0.2);
+  }
+
+  .font-display {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
