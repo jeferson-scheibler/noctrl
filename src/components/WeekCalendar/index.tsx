@@ -1,375 +1,301 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
-  format, startOfWeek, addDays, addWeeks,
-  isSameDay, isToday, parseISO,
+  format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
+  addDays, addMonths, subMonths, isSameDay, isSameMonth,
+  isToday, isAfter,
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStore } from '../../store';
 import { AREA_CONFIG } from '../../types';
-import type { CalendarEvent, Area } from '../../types';
+import type { CalendarEvent } from '../../types';
 
-// Layout constants
-const HOUR_PX   = 64;   // pixels por hora
-const DAY_START = 6;    // 06:00
-const DAY_END   = 23;   // 23:00
-const HOURS     = Array.from({ length: DAY_END - DAY_START }, (_, i) => i + DAY_START);
-const GRID_H    = HOURS.length * HOUR_PX;
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
-function timeToMinutes(time: string): number {
-  const [h, m] = time.split(':').map(Number);
-  return h * 60 + m;
+function buildMonthGrid(month: Date): Date[] {
+  const first = startOfWeek(startOfMonth(month), { weekStartsOn: 0 });
+  const last  = endOfWeek(endOfMonth(month),     { weekStartsOn: 0 });
+  const days: Date[] = [];
+  let cur = first;
+  while (!isAfter(cur, last)) { days.push(cur); cur = addDays(cur, 1); }
+  return days;
 }
 
-function eventPosition(ev: CalendarEvent): { top: number; height: number } | null {
-  if (!ev.startTime) return null;
-  const startMin = timeToMinutes(ev.startTime) - DAY_START * 60;
-  const endMin   = ev.endTime
-    ? timeToMinutes(ev.endTime) - DAY_START * 60
-    : startMin + 60;
-  if (startMin < 0 && endMin <= 0) return null;
-  const top    = Math.max(0, (startMin / 60) * HOUR_PX);
-  const height = Math.max(24, ((endMin - startMin) / 60) * HOUR_PX);
-  return { top, height };
+function eventsForDay(events: CalendarEvent[], date: Date) {
+  const ds = format(date, 'yyyy-MM-dd');
+  return events.filter((e) => e.date === ds);
 }
 
-function getNowTop(): number {
-  const now = new Date();
-  const min = (now.getHours() - DAY_START) * 60 + now.getMinutes();
-  return (min / 60) * HOUR_PX;
+function dotColors(events: CalendarEvent[], date: Date): string[] {
+  return [...new Set(eventsForDay(events, date).map((e) => AREA_CONFIG[e.area].color))].slice(0, 3);
 }
 
-// ─── EventBlock ────────────────────────────────────────────────────────────
-function EventBlock({ ev, compact = false }: { ev: CalendarEvent; compact?: boolean }) {
+function formatTimeRange(ev: CalendarEvent): string {
+  if (ev.allDay) return 'Dia inteiro';
+  if (!ev.startTime) return '';
+  return ev.endTime ? `${ev.startTime} – ${ev.endTime}` : ev.startTime;
+}
+
+// ─── EventCard ───────────────────────────────────────────────────────────────
+
+function EventCard({ ev }: { ev: CalendarEvent }) {
   const area = AREA_CONFIG[ev.area];
-  const pos  = eventPosition(ev);
-
-  if (!pos && !ev.allDay) return null;
-
-  const style = pos
-    ? {
-        position: 'absolute' as const,
-        top:    pos.top + 2,
-        height: pos.height - 4,
-        left: 3,
-        right: 3,
-        background: `linear-gradient(135deg, ${area.color}28, ${area.color}10)`,
-        borderLeft: `3px solid ${area.color}`,
-        borderRadius: 8,
-        overflow: 'hidden',
-      }
-    : {};
+  const time = formatTimeRange(ev);
 
   return (
     <div
-      style={style}
-      className={compact ? '' : 'px-2 py-1 cursor-default select-none'}
+      className="rounded-2xl overflow-hidden transition-all duration-150 active:scale-[0.98]"
+      style={{ border: `1px solid ${area.color}20` }}
     >
-      <p
-        className="text-xs font-semibold leading-tight truncate"
-        style={{ color: area.color }}
+      {/* Faixa superior colorida */}
+      <div
+        className="px-4 py-2 flex items-center justify-between"
+        style={{
+          background: `linear-gradient(135deg, ${area.color}40, ${area.color}20)`,
+        }}
       >
-        {ev.title}
-      </p>
-      {pos && pos.height >= 40 && ev.startTime && (
-        <p className="text-[10px] mt-0.5 opacity-70" style={{ color: area.color }}>
-          {ev.startTime}{ev.endTime ? ` – ${ev.endTime}` : ''}
+        <span
+          className="text-xs font-bold uppercase tracking-wider"
+          style={{ color: area.color }}
+        >
+          {area.label}
+        </span>
+        {time && (
+          <span className="text-xs font-medium" style={{ color: `${area.color}CC` }}>
+            {time}
+          </span>
+        )}
+      </div>
+
+      {/* Conteúdo */}
+      <div
+        className="px-4 py-3"
+        style={{ background: `linear-gradient(180deg, ${area.color}0A, transparent)` }}
+      >
+        <p className="text-base font-semibold text-text-primary leading-snug">
+          {ev.title}
         </p>
+        {ev.notes && (
+          <p className="text-sm text-text-secondary mt-1 line-clamp-2">{ev.notes}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── DayAgenda ────────────────────────────────────────────────────────────────
+
+function DayAgenda({ date }: { date: Date }) {
+  const { events } = useStore();
+  const dayEvents = eventsForDay(events, date)
+    .sort((a, b) => {
+      if (a.allDay && !b.allDay) return -1;
+      if (!a.allDay && b.allDay) return 1;
+      return (a.startTime ?? '').localeCompare(b.startTime ?? '');
+    });
+
+  const dayName  = format(date, 'EEEE', { locale: ptBR });
+  const dayNum   = format(date, 'd');
+  const monthStr = format(date, 'MMMM', { locale: ptBR });
+  const current  = isToday(date);
+
+  return (
+    <div className="px-4 pb-8 animate-fade-in">
+      {/* Cabeçalho do dia */}
+      <div className="flex items-end gap-4 mb-5 pt-1">
+        <div className="relative">
+          <span
+            className="font-display leading-none"
+            style={{
+              fontSize: 72,
+              color: current ? '#2E6FFF' : '#F0F0F5',
+              lineHeight: 1,
+              textShadow: current ? '0 0 40px rgba(46,111,255,0.4)' : 'none',
+            }}
+          >
+            {dayNum}
+          </span>
+          {current && (
+            <div
+              className="absolute -top-1 -right-2 w-2 h-2 rounded-full"
+              style={{ backgroundColor: '#2E6FFF', boxShadow: '0 0 8px #2E6FFF' }}
+            />
+          )}
+        </div>
+        <div className="pb-2">
+          <p className="font-display text-lg text-text-primary capitalize">{dayName}</p>
+          <p className="text-sm text-text-secondary capitalize">{monthStr}</p>
+        </div>
+        {dayEvents.length > 0 && (
+          <div className="pb-2 ml-auto">
+            <span
+              className="text-xs font-semibold px-2.5 py-1 rounded-full"
+              style={{ backgroundColor: 'rgba(46,111,255,0.12)', color: '#5B9FFF' }}
+            >
+              {dayEvents.length} evento{dayEvents.length > 1 ? 's' : ''}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Eventos */}
+      {dayEvents.length > 0 ? (
+        <div className="space-y-3">
+          {dayEvents.map((ev) => <EventCard key={ev.id} ev={ev} />)}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center py-10 gap-3">
+          {/* Ícone abstrato — 3 linhas tracejadas */}
+          <div className="space-y-2 opacity-20">
+            {[60, 44, 52].map((w, i) => (
+              <div
+                key={i}
+                className="h-px rounded-full"
+                style={{ width: w, background: 'repeating-linear-gradient(90deg,#5A5A6E 0,#5A5A6E 4px,transparent 4px,transparent 8px)' }}
+              />
+            ))}
+          </div>
+          <p className="text-sm text-text-muted">
+            {current ? 'Dia livre. As vezes descansar e o plano.' : 'Nenhum compromisso neste dia.'}
+          </p>
+        </div>
       )}
     </div>
   );
 }
 
-// ─── CurrentTimeLine ────────────────────────────────────────────────────────
-function CurrentTimeLine() {
-  const [top, setTop] = useState(getNowTop);
+// ─── MonthGrid ───────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    const id = setInterval(() => setTop(getNowTop()), 60_000);
-    return () => clearInterval(id);
-  }, []);
+const DAY_LABELS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 
-  if (top < 0 || top > GRID_H) return null;
-
-  return (
-    <div
-      className="absolute left-0 right-0 z-10 flex items-center pointer-events-none"
-      style={{ top }}
-    >
-      <div
-        className="w-2 h-2 rounded-full flex-shrink-0 -ml-1"
-        style={{ backgroundColor: '#2E6FFF', boxShadow: '0 0 6px #2E6FFF' }}
-      />
-      <div
-        className="flex-1 h-px"
-        style={{ backgroundColor: 'rgba(46,111,255,0.6)' }}
-      />
-    </div>
-  );
-}
-
-// ─── DayColumn ──────────────────────────────────────────────────────────────
-function DayColumn({ date, showNow }: { date: Date; showNow: boolean }) {
-  const { events } = useStore();
-  const dateStr   = format(date, 'yyyy-MM-dd');
-  const dayEvents = events.filter((e) => e.date === dateStr && !e.allDay && e.startTime);
-
-  return (
-    <div className="relative flex-1" style={{ height: GRID_H }}>
-      {/* Linhas de hora — background only */}
-      {HOURS.map((h) => (
-        <div
-          key={h}
-          className="absolute left-0 right-0"
-          style={{
-            top: (h - DAY_START) * HOUR_PX,
-            height: HOUR_PX,
-            borderTop: '1px solid rgba(255,255,255,0.04)',
-          }}
-        />
-      ))}
-
-      {/* Indicador de agora */}
-      {showNow && <CurrentTimeLine />}
-
-      {/* Eventos */}
-      {dayEvents.map((ev) => (
-        <EventBlock key={ev.id} ev={ev} />
-      ))}
-    </div>
-  );
-}
-
-// ─── DayStrip ───────────────────────────────────────────────────────────────
-function DayStrip({
-  days,
+function MonthGrid({
+  month,
   selected,
   onSelect,
+  onMonthChange,
 }: {
-  days: Date[];
+  month: Date;
   selected: Date;
   onSelect: (d: Date) => void;
+  onMonthChange: (d: Date) => void;
 }) {
-  const { events, tasks } = useStore();
-  const stripRef = useRef<HTMLDivElement>(null);
-
-  // Centraliza o dia selecionado no strip
-  useEffect(() => {
-    const el = stripRef.current;
-    if (!el) return;
-    const idx   = days.findIndex((d) => isSameDay(d, selected));
-    const child = el.children[idx] as HTMLElement | undefined;
-    if (child) {
-      el.scrollTo({ left: child.offsetLeft - el.clientWidth / 2 + child.clientWidth / 2, behavior: 'smooth' });
-    }
-  }, [selected, days]);
-
-  function getDots(date: Date): string[] {
-    const ds = format(date, 'yyyy-MM-dd');
-    const evAreas = events.filter((e) => e.date === ds).map((e) => e.area);
-    const tkAreas = tasks
-      .filter((t) => {
-        if (!t.dueDate) return false;
-        try { return isSameDay(parseISO(t.dueDate), date); } catch { return false; }
-      })
-      .map((t) => t.area);
-    return [...new Set([...evAreas, ...tkAreas])].slice(0, 3);
-  }
+  const { events } = useStore();
+  const grid = buildMonthGrid(month);
 
   return (
     <div
-      ref={stripRef}
-      className="flex gap-1 overflow-x-auto px-3 py-2 scrollbar-none"
-      style={{ scrollbarWidth: 'none' }}
+      className="flex-shrink-0"
+      style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
     >
-      {days.map((day) => {
-        const active   = isSameDay(day, selected);
-        const current  = isToday(day);
-        const dots     = getDots(day);
-
-        return (
-          <button
-            key={day.toISOString()}
-            onClick={() => onSelect(day)}
-            className="flex flex-col items-center gap-1 flex-shrink-0 w-11 py-1.5 rounded-xl transition-all duration-150"
-            style={
-              active
-                ? { backgroundColor: '#2E6FFF', boxShadow: '0 0 14px rgba(46,111,255,0.45)' }
-                : current
-                ? { backgroundColor: 'rgba(46,111,255,0.12)', border: '1px solid rgba(46,111,255,0.3)' }
-                : {}
-            }
-          >
-            <span
-              className="text-[10px] font-semibold uppercase"
-              style={{ color: active ? 'rgba(255,255,255,0.7)' : '#5A5A6E' }}
-            >
-              {format(day, 'EEE', { locale: ptBR }).slice(0, 3)}
-            </span>
-            <span
-              className="text-sm font-bold"
-              style={{ color: active ? '#fff' : current ? '#2E6FFF' : '#F0F0F5' }}
-            >
-              {format(day, 'd')}
-            </span>
-            <div className="flex gap-0.5 h-1.5">
-              {dots.map((area) => (
-                <span
-                  key={area}
-                  className="w-1 h-1 rounded-full"
-                  style={{
-                    backgroundColor: active
-                      ? 'rgba(255,255,255,0.7)'
-                      : AREA_CONFIG[area as Area].color,
-                  }}
-                />
-              ))}
-            </div>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── AllDayRow ───────────────────────────────────────────────────────────────
-function AllDayRow({ date }: { date: Date }) {
-  const { events } = useStore();
-  const ds = format(date, 'yyyy-MM-dd');
-  const allDay = events.filter((e) => e.date === ds && e.allDay);
-  if (allDay.length === 0) return null;
-
-  return (
-    <div className="px-4 py-2 border-b border-subtle flex flex-wrap gap-1.5">
-      {allDay.map((ev) => {
-        const area = AREA_CONFIG[ev.area];
-        return (
-          <span
-            key={ev.id}
-            className="text-xs font-semibold px-2 py-0.5 rounded-full"
-            style={{ backgroundColor: `${area.color}22`, color: area.color }}
-          >
-            {ev.title}
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── TimeLabels ──────────────────────────────────────────────────────────────
-function TimeLabels() {
-  return (
-    <div className="flex-shrink-0 w-12" style={{ height: GRID_H }}>
-      {HOURS.map((h) => (
-        <div
-          key={h}
-          className="flex items-start justify-end pr-2"
-          style={{ height: HOUR_PX }}
-        >
-          <span className="text-[10px] text-text-muted mt-[-6px]">{h}h</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── WeekCalendar ────────────────────────────────────────────────────────────
-export function WeekCalendar() {
-  const [weekOffset, setWeekOffset] = useState(0);
-  const [selectedDay, setSelectedDay] = useState(new Date());
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const baseDate  = addWeeks(new Date(), weekOffset);
-  const weekStart = startOfWeek(baseDate, { weekStartsOn: 0 });
-  const days      = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-
-  // Rola para o horario atual na montagem
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const nowTop = getNowTop();
-    el.scrollTo({ top: Math.max(0, nowTop - 120), behavior: 'smooth' });
-  }, []);
-
-  // Ao trocar de semana, seleciona hoje se estiver na semana, senao segunda-feira
-  const handleWeekChange = useCallback((delta: number) => {
-    setWeekOffset((o) => {
-      const next = o + delta;
-      const newBase  = addWeeks(new Date(), next);
-      const newStart = startOfWeek(newBase, { weekStartsOn: 0 });
-      const newDays  = Array.from({ length: 7 }, (_, i) => addDays(newStart, i));
-      const todayInWeek = newDays.find((d) => isToday(d));
-      setSelectedDay(todayInWeek ?? newDays[1]);
-      return next;
-    });
-  }, []);
-
-  const monthLabel = format(selectedDay, 'MMMM yyyy', { locale: ptBR });
-  const showNow    = isToday(selectedDay);
-
-  return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-bg-primary">
-
-      {/* Header: mes + navegacao de semana */}
-      <div className="flex items-center justify-between px-4 pt-4 pb-1 flex-shrink-0">
-        <h2 className="font-display text-lg text-text-primary capitalize">{monthLabel}</h2>
-        <div className="flex items-center gap-1">
-          {weekOffset !== 0 && (
+      {/* Navegação de mês */}
+      <div className="flex items-center justify-between px-4 py-3">
+        <h2 className="font-display text-base text-text-primary capitalize">
+          {format(month, 'MMMM yyyy', { locale: ptBR })}
+        </h2>
+        <div className="flex gap-1">
+          {!isToday(selected) && (
             <button
-              onClick={() => { setWeekOffset(0); setSelectedDay(new Date()); }}
+              onClick={() => { onSelect(new Date()); onMonthChange(new Date()); }}
               className="text-xs text-accent-glow hover:text-accent-blue mr-2 transition-colors"
             >
               Hoje
             </button>
           )}
           <button
-            onClick={() => handleWeekChange(-1)}
-            aria-label="Semana anterior"
-            className="w-8 h-8 flex items-center justify-center rounded-btn text-text-secondary hover:text-text-primary hover:bg-bg-elevated transition-colors"
+            onClick={() => onMonthChange(subMonths(month, 1))}
+            aria-label="Mes anterior"
+            className="w-7 h-7 flex items-center justify-center rounded-btn text-text-secondary hover:text-text-primary hover:bg-bg-elevated transition-colors"
           >
-            <ChevronLeft size={17} />
+            <ChevronLeft size={15} />
           </button>
           <button
-            onClick={() => handleWeekChange(1)}
-            aria-label="Proxima semana"
-            className="w-8 h-8 flex items-center justify-center rounded-btn text-text-secondary hover:text-text-primary hover:bg-bg-elevated transition-colors"
+            onClick={() => onMonthChange(addMonths(month, 1))}
+            aria-label="Proximo mes"
+            className="w-7 h-7 flex items-center justify-center rounded-btn text-text-secondary hover:text-text-primary hover:bg-bg-elevated transition-colors"
           >
-            <ChevronRight size={17} />
+            <ChevronRight size={15} />
           </button>
         </div>
       </div>
 
-      {/* Strip de dias */}
-      <div className="flex-shrink-0">
-        <DayStrip days={days} selected={selectedDay} onSelect={setSelectedDay} />
-      </div>
-
-      {/* Eventos de dia inteiro */}
-      <AllDayRow date={selectedDay} />
-
-      {/* Divisor */}
-      <div className="h-px bg-subtle flex-shrink-0" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
-
-      {/* Timeline */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="flex" style={{ minHeight: GRID_H }}>
-          <TimeLabels />
-          <div className="flex-1 relative">
-            <DayColumn date={selectedDay} showNow={showNow} />
+      {/* Nomes dos dias */}
+      <div className="grid grid-cols-7 px-3 pb-1">
+        {DAY_LABELS.map((l, i) => (
+          <div key={i} className="flex justify-center">
+            <span className="text-[10px] font-semibold text-text-muted w-7 text-center">{l}</span>
           </div>
-        </div>
+        ))}
       </div>
 
-      {/* Estado vazio */}
-      {useStore.getState().events.filter(
-        (e) => e.date === format(selectedDay, 'yyyy-MM-dd')
-      ).length === 0 && (
-        <div className="absolute bottom-32 left-0 right-0 flex flex-col items-center gap-2 pointer-events-none">
-          <CalendarDays size={28} className="text-text-muted opacity-40" />
-          <p className="text-xs text-text-muted opacity-40">Nenhum compromisso neste dia</p>
-        </div>
-      )}
+      {/* Células */}
+      <div className="grid grid-cols-7 px-3 pb-3 gap-y-0.5">
+        {grid.map((day) => {
+          const inMonth  = isSameMonth(day, month);
+          const active   = isSameDay(day, selected);
+          const current  = isToday(day);
+          const dots     = inMonth ? dotColors(events, day) : [];
+
+          return (
+            <button
+              key={day.toISOString()}
+              onClick={() => { onSelect(day); if (!isSameMonth(day, month)) onMonthChange(day); }}
+              className="flex flex-col items-center gap-0.5 py-0.5 rounded-xl transition-all duration-100"
+              style={active ? {
+                background: 'rgba(46,111,255,0.9)',
+                boxShadow: '0 0 12px rgba(46,111,255,0.4)',
+              } : current ? {
+                background: 'rgba(46,111,255,0.12)',
+              } : {}}
+            >
+              <span
+                className="w-7 h-7 flex items-center justify-center text-xs font-semibold rounded-full"
+                style={{
+                  color: active ? '#fff' : current ? '#5B9FFF' : inMonth ? '#F0F0F5' : '#3A3A4A',
+                }}
+              >
+                {format(day, 'd')}
+              </span>
+              {/* Dots de eventos */}
+              <div className="flex gap-0.5 h-1">
+                {dots.map((color, i) => (
+                  <span
+                    key={i}
+                    className="w-1 h-1 rounded-full"
+                    style={{ backgroundColor: active ? 'rgba(255,255,255,0.7)' : color }}
+                  />
+                ))}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── WeekCalendar ────────────────────────────────────────────────────────────
+
+export function WeekCalendar() {
+  const [selectedDay, setSelectedDay]   = useState(new Date());
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const agendaRef = useRef<HTMLDivElement>(null);
+
+  // Ao trocar de dia, rola o conteúdo para o topo
+  useEffect(() => {
+    agendaRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [selectedDay]);
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden bg-bg-primary">
+      <MonthGrid
+        month={currentMonth}
+        selected={selectedDay}
+        onSelect={setSelectedDay}
+        onMonthChange={setCurrentMonth}
+      />
+      <div ref={agendaRef} className="flex-1 overflow-y-auto pt-4">
+        <DayAgenda date={selectedDay} />
+      </div>
     </div>
   );
 }
