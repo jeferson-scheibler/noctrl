@@ -239,29 +239,32 @@ function MonthGrid({
             <button
               key={day.toISOString()}
               onClick={() => { onSelect(day); if (!isSameMonth(day, month)) onMonthChange(day); }}
-              className="flex flex-col items-center gap-0.5 py-0.5 rounded-xl transition-all duration-100"
-              style={active ? {
-                background: 'rgba(46,111,255,0.9)',
-                boxShadow: '0 0 12px rgba(46,111,255,0.4)',
-              } : current ? {
-                background: 'rgba(46,111,255,0.12)',
-              } : {}}
+              className="flex flex-col items-center gap-0.5 py-0.5 transition-all duration-100"
             >
-              <span
-                className="w-7 h-7 flex items-center justify-center text-xs font-semibold rounded-full"
+              {/* Quadrado destacado — tamanho fixo, independente da grade */}
+              <div
+                className="w-8 h-8 flex items-center justify-center text-xs font-semibold"
                 style={{
+                  borderRadius: 10,
                   color: active ? '#fff' : current ? '#5B9FFF' : inMonth ? '#F0F0F5' : '#3A3A4A',
+                  ...(active ? {
+                    background: 'rgba(46,111,255,0.95)',
+                    boxShadow: '0 0 14px rgba(46,111,255,0.5)',
+                  } : current ? {
+                    background: 'rgba(46,111,255,0.14)',
+                    border: '1px solid rgba(46,111,255,0.35)',
+                  } : {}),
                 }}
               >
                 {format(day, 'd')}
-              </span>
+              </div>
               {/* Dots de eventos */}
               <div className="flex gap-0.5 h-1">
                 {dots.map((color, i) => (
                   <span
                     key={i}
                     className="w-1 h-1 rounded-full"
-                    style={{ backgroundColor: active ? 'rgba(255,255,255,0.7)' : color }}
+                    style={{ backgroundColor: active ? '#5B9FFF' : color }}
                   />
                 ))}
               </div>
