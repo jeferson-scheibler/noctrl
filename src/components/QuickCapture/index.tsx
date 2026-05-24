@@ -1,58 +1,118 @@
-import { useState, useRef } from 'react';
-import { Mic, MicOff, Image as ImageIcon, FileText, X, Loader2 } from 'lucide-react';
-
-type SpeechRecognitionInstance = {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  start: () => void;
-  stop: () => void;
-  onstart: (() => void) | null;
-  onend: (() => void) | null;
-  onresult: ((event: { results: { [k: number]: { [k: number]: { transcript: string } } } }) => void) | null;
-  onerror: (() => void) | null;
-};
-
-type SpeechRecognitionCtor = new () => SpeechRecognitionInstance;
+import { useState, useRef, useEffect } from 'react';
+import {
+  Mic, MicOff, Camera, X, Loader2,
+  CheckSquare, Lightbulb, CalendarDays,
+} from 'lucide-react';
 import { useStore } from '../../store';
 import { AREA_CONFIG } from '../../types';
 import type { CaptureType, Area, EnergyLevel } from '../../types';
-import { Modal } from '../ui/Modal';
-import { Button } from '../ui/Button';
+
+// ─── Speech Recognition ──────────────────────────────────────────────────────
+
+type SpeechRecognitionInstance = {
+  lang: string; continuous: boolean; interimResults: boolean;
+  start: () => void; stop: () => void;
+  onstart: (() => void) | null;
+  onend:   (() => void) | null;
+  onresult: ((e: { results: { [k: number]: { [k: number]: { transcript: string } } } }) => void) | null;
+  onerror:  (() => void) | null;
+};
+type SpeechRecognitionCtor = new () => SpeechRecognitionInstance;
+
+// ─── Tipos ───────────────────────────────────────────────────────────────────
 
 interface QuickCaptureProps {
   open: boolean;
   onClose: () => void;
 }
 
-type InputMode = 'text' | 'audio' | 'image';
-
-const INITIAL_STATE = {
-  title: '',
-  type: 'task' as CaptureType,
-  area: 'personal' as Area,
-  energy: 'medium' as EnergyLevel,
-  notes: '',
-  imageUrl: '',
-  audioTranscript: '',
+const INITIAL: {
+  title: string; type: CaptureType; area: Area;
+  energy: EnergyLevel; notes: string; imageUrl: string;
+} = {
+  title: '', type: 'task', area: 'personal',
+  energy: 'medium', notes: '', imageUrl: '',
 };
+
+const TYPE_OPTIONS: { value: CaptureType; label: string; Icon: typeof CheckSquare }[] = [
+  { value: 'task',  label: 'Tarefa',      Icon: CheckSquare  },
+  { value: 'idea',  label: 'Ideia',       Icon: Lightbulb    },
+  { value: 'event', label: 'Compromisso', Icon: CalendarDays },
+];
+
+const ENERGY_OPTIONS: { value: EnergyLevel; dots: number; label: string }[] = [
+  { value: 'easy',   dots: 1, label: 'Facil'  },
+  { value: 'medium', dots: 2, label: 'Medio'  },
+  { value: 'heavy',  dots: 3, label: 'Pesado' },
+];
+
+// ─── EnergyDots ──────────────────────────────────────────────────────────────
+
+function EnergyDots({ count, active }: { count: number; active: boolean }) {
+  return (
+    <span className="flex gap-1">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <span
+          key={i}
+          className="rounded-full transition-all duration-150"
+          style={{
+            width: 5, height: 5,
+            backgroundColor: i < count
+              ? active ? '#fff' : '#2E6FFF'
+              : active ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+// ─── WaveformBars ─────────────────────────────────────────────────────────────
+
+function WaveformBars() {
+  return (
+    <span className="flex items-center gap-0.5" aria-hidden>
+      {[3, 6, 10, 7, 4, 9, 5, 8, 3].map((h, i) => (
+        <span
+          key={i}
+          className="rounded-full"
+          style={{
+            width: 2, height: h,
+            backgroundColor: '#FF6B6B',
+            animation: `waveBar 0.9s ease-in-out ${(i * 0.08).toFixed(2)}s infinite alternate`,
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+// ─── QuickCapture ────────────────────────────────────────────────────────────
 
 export function QuickCapture({ open, onClose }: QuickCaptureProps) {
   const { addTask, addIdea, addEvent } = useStore();
-  const [form, setForm] = useState(INITIAL_STATE);
-  const [inputMode, setInputMode] = useState<InputMode>('text');
-  const [isRecording, setIsRecording] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [form, setForm]           = useState(INITIAL);
+  const [recording, setRecording] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef   = useRef<HTMLInputElement>(null);
+  const textareaRef    = useRef<HTMLTextAreaElement>(null);
+
+  // Foca o textarea ao abrir
+  useEffect(() => {
+    if (open) setTimeout(() => textareaRef.current?.focus(), 120);
+  }, [open]);
+
+  // Bloqueia scroll do body enquanto aberto
+  useEffect(() => {
+    document.body.style.overflow = open ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [open]);
 
   function handleClose() {
-    setForm(INITIAL_STATE);
-    setInputMode('text');
-    setIsRecording(false);
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-    }
+    setForm(INITIAL);
+    setRecording(false);
+    recognitionRef.current?.stop();
     onClose();
   }
 
@@ -62,307 +122,302 @@ export function QuickCapture({ open, onClose }: QuickCaptureProps) {
     if (!title) return;
 
     if (form.type === 'idea') {
-      addIdea({
-        title,
-        area: form.area,
-        energy: form.energy,
-        notes: form.notes,
-        imageUrl: form.imageUrl,
-        audioTranscript: form.audioTranscript,
-      });
+      addIdea({ title, area: form.area, energy: form.energy, notes: form.notes, imageUrl: form.imageUrl });
     } else if (form.type === 'event') {
-      addEvent({
-        title,
-        area: form.area,
-        date: new Date().toISOString().split('T')[0],
-        allDay: true,
-        notes: form.notes,
-      });
+      addEvent({ title, area: form.area, date: new Date().toISOString().split('T')[0], allDay: true });
     } else {
-      addTask({
-        title,
-        type: 'task',
-        area: form.area,
-        energy: form.energy,
-        notes: form.notes,
-        imageUrl: form.imageUrl,
-        audioTranscript: form.audioTranscript,
-      });
+      addTask({ title, type: 'task', area: form.area, energy: form.energy, notes: form.notes, imageUrl: form.imageUrl });
     }
-
     handleClose();
   }
 
-  function startRecording() {
+  function toggleRecording() {
+    if (recording) {
+      recognitionRef.current?.stop();
+      setRecording(false);
+      return;
+    }
     const w = window as typeof window & {
       SpeechRecognition?: SpeechRecognitionCtor;
       webkitSpeechRecognition?: SpeechRecognitionCtor;
     };
-    const SpeechRecognitionAPI = w.SpeechRecognition || w.webkitSpeechRecognition;
+    const API = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!API) { alert('Voz nao disponivel neste navegador.'); return; }
 
-    if (!SpeechRecognitionAPI) {
-      alert('Reconhecimento de voz nao disponivel neste navegador.');
-      return;
-    }
-
-    const recognition = new SpeechRecognitionAPI();
-    recognition.lang = 'pt-BR';
-    recognition.continuous = false;
-    recognition.interimResults = false;
-
-    recognition.onstart = () => setIsRecording(true);
-    recognition.onend = () => {
-      setIsRecording(false);
-      setIsProcessing(false);
+    const r = new API();
+    r.lang = 'pt-BR'; r.continuous = false; r.interimResults = false;
+    r.onstart  = () => { setRecording(true); setProcessing(false); };
+    r.onend    = () => { setRecording(false); setProcessing(false); };
+    r.onresult = (ev) => {
+      const t = ev.results[0][0].transcript;
+      setForm((f) => ({ ...f, title: f.title ? `${f.title} ${t}` : t }));
     };
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setForm((f) => ({
-        ...f,
-        title: f.title ? f.title + ' ' + transcript : transcript,
-        audioTranscript: transcript,
-      }));
-    };
-    recognition.onerror = () => {
-      setIsRecording(false);
-      setIsProcessing(false);
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-    setIsProcessing(true);
+    r.onerror = () => { setRecording(false); setProcessing(false); };
+    recognitionRef.current = r;
+    r.start();
+    setProcessing(true);
   }
 
-  function stopRecording() {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-    }
-    setIsRecording(false);
-  }
-
-  function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Imagem muito grande. Limite de 5MB.');
-      return;
-    }
+    if (file.size > 5 * 1024 * 1024) { alert('Imagem muito grande. Limite: 5 MB.'); return; }
     const reader = new FileReader();
-    reader.onload = () => {
-      setForm((f) => ({ ...f, imageUrl: reader.result as string }));
-    };
+    reader.onload = () => setForm((f) => ({ ...f, imageUrl: reader.result as string }));
     reader.readAsDataURL(file);
   }
 
+  if (!open) return null;
+
   const canSubmit = form.title.trim().length > 0;
+  const areaColor = AREA_CONFIG[form.area].color;
 
   return (
-    <Modal open={open} onClose={handleClose} title="Captura rapida">
-      <form onSubmit={handleSubmit} className="p-5 space-y-4">
+    <>
+      {/* Keyframes de waveform — injetados inline uma vez */}
+      <style>{`
+        @keyframes waveBar {
+          from { transform: scaleY(0.4); }
+          to   { transform: scaleY(1.4); }
+        }
+      `}</style>
 
-        {/* Modo de entrada */}
-        <div className="flex gap-2">
-          {([
-            { mode: 'text' as InputMode, label: 'Texto', Icon: FileText },
-            { mode: 'audio' as InputMode, label: 'Audio', Icon: Mic },
-            { mode: 'image' as InputMode, label: 'Imagem', Icon: ImageIcon },
-          ] as const).map(({ mode, label, Icon }) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setInputMode(mode)}
-              className={[
-                'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-btn text-xs font-semibold transition-all',
-                inputMode === mode
-                  ? 'bg-accent-blue text-white glow-sm'
-                  : 'bg-bg-surface border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-elevated',
-              ].join(' ')}
-            >
-              <Icon size={13} />
-              {label}
-            </button>
-          ))}
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-50"
+        style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
+        onClick={handleClose}
+        aria-hidden
+      />
+
+      {/* Sheet */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="fixed bottom-0 left-0 right-0 z-50 animate-slide-up"
+        style={{
+          background: '#18181F',
+          borderRadius: '24px 24px 0 0',
+          boxShadow: '0 -8px 40px rgba(0,0,0,0.5)',
+          maxHeight: '92dvh',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        {/* Drag handle */}
+        <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+          <div className="w-9 h-1 rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
         </div>
 
-        {/* Campo de texto principal */}
-        <div>
-          <input
-            type="text"
-            value={form.title}
-            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value.slice(0, 200) }))}
-            placeholder="O que esta na sua cabeca?"
-            maxLength={200}
-            autoFocus
-            className="w-full bg-bg-surface border-subtle rounded-btn px-3 py-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent-blue focus:shadow-glow-sm transition-all"
-          />
-        </div>
-
-        {/* Controles de audio */}
-        {inputMode === 'audio' && (
-          <div className="flex justify-center">
-            <button
-              type="button"
-              onClick={isRecording ? stopRecording : startRecording}
-              disabled={isProcessing && !isRecording}
-              className={[
-                'w-14 h-14 rounded-full flex items-center justify-center transition-all',
-                isRecording
-                  ? 'bg-area-personal text-white animate-pulse'
-                  : 'bg-accent-blue/10 text-accent-blue hover:bg-accent-blue/20',
-              ].join(' ')}
-            >
-              {isProcessing && !isRecording ? (
-                <Loader2 size={22} className="animate-spin" />
-              ) : isRecording ? (
-                <MicOff size={22} />
-              ) : (
-                <Mic size={22} />
-              )}
-            </button>
-          </div>
-        )}
-
-        {/* Upload de imagem */}
-        {inputMode === 'image' && (
-          <div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={handleImageUpload}
-              className="hidden"
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-col overflow-y-auto"
+          style={{ gap: 0 }}
+        >
+          {/* Área de texto principal */}
+          <div className="px-5 pt-3 pb-4">
+            <textarea
+              ref={textareaRef}
+              value={form.title}
+              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value.slice(0, 300) }))}
+              placeholder="O que esta na sua cabeca?"
+              rows={3}
+              maxLength={300}
+              className="w-full bg-transparent text-lg text-text-primary placeholder:text-text-muted resize-none leading-relaxed"
+              style={{ outline: 'none', fontFamily: 'Inter, sans-serif' }}
             />
-            {form.imageUrl ? (
-              <div className="relative rounded-card overflow-hidden">
-                <img
-                  src={form.imageUrl}
-                  alt="Captura"
-                  className="w-full max-h-40 object-cover"
-                />
+
+            {/* Preview de imagem */}
+            {form.imageUrl && (
+              <div className="relative mt-3 rounded-xl overflow-hidden">
+                <img src={form.imageUrl} alt="Imagem capturada" className="w-full max-h-36 object-cover" />
                 <button
                   type="button"
                   onClick={() => setForm((f) => ({ ...f, imageUrl: '' }))}
-                  className="absolute top-2 right-2 w-6 h-6 bg-black/60 rounded-full flex items-center justify-center text-white"
+                  className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
+                  style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}
                 >
-                  <X size={12} />
+                  <X size={13} className="text-white" />
                 </button>
               </div>
-            ) : (
+            )}
+
+            {/* Acessórios de entrada */}
+            <div className="flex items-center gap-3 mt-3">
+              {/* Microfone */}
+              <button
+                type="button"
+                onClick={toggleRecording}
+                disabled={processing && !recording}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full transition-all"
+                style={recording
+                  ? { backgroundColor: 'rgba(255,107,107,0.15)', border: '1px solid rgba(255,107,107,0.4)' }
+                  : { backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }
+                }
+              >
+                {processing && !recording
+                  ? <Loader2 size={14} className="animate-spin text-text-secondary" />
+                  : recording
+                  ? <><MicOff size={14} style={{ color: '#FF6B6B' }} /><WaveformBars /></>
+                  : <Mic size={14} className="text-text-secondary" />
+                }
+                {!processing && !recording && (
+                  <span className="text-xs text-text-muted">Voz</span>
+                )}
+              </button>
+
+              {/* Câmera */}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full py-8 border border-dashed border-text-muted rounded-card text-text-secondary text-sm hover:border-accent-blue hover:text-accent-blue transition-colors"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full transition-all"
+                style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
               >
-                Toque para adicionar imagem
+                <Camera size={14} className="text-text-secondary" />
+                <span className="text-xs text-text-muted">Foto</span>
               </button>
-            )}
-          </div>
-        )}
 
-        {/* Tipo */}
-        <div>
-          <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">
-            Tipo
-          </label>
-          <div className="flex gap-2">
-            {([
-              { value: 'task', label: 'Tarefa' },
-              { value: 'idea', label: 'Ideia' },
-              { value: 'event', label: 'Compromisso' },
-            ] as const).map(({ value, label }) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setForm((f) => ({ ...f, type: value }))}
-                className={[
-                  'flex-1 py-2 rounded-btn text-xs font-semibold transition-all',
-                  form.type === value
-                    ? 'bg-accent-blue text-white'
-                    : 'bg-bg-surface border-subtle text-text-secondary hover:text-text-primary',
-                ].join(' ')}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleImage}
+                className="hidden"
+              />
 
-        {/* Area */}
-        <div>
-          <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">
-            Area
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            {(Object.entries(AREA_CONFIG) as [Area, typeof AREA_CONFIG[Area]][]).map(
-              ([area, config]) => (
-                <button
-                  key={area}
-                  type="button"
-                  onClick={() => setForm((f) => ({ ...f, area }))}
-                  className={[
-                    'py-2.5 rounded-btn text-xs font-semibold transition-all border',
-                    form.area === area
-                      ? 'border-current'
-                      : 'border-subtle text-text-secondary hover:border-white/15',
-                  ].join(' ')}
-                  style={
-                    form.area === area
-                      ? {
-                          backgroundColor: `${config.color}22`,
-                          color: config.color,
-                          borderColor: `${config.color}55`,
-                        }
-                      : undefined
-                  }
-                >
-                  {config.label}
-                </button>
-              )
-            )}
-          </div>
-        </div>
-
-        {/* Energia (so para tarefas) */}
-        {form.type === 'task' && (
-          <div>
-            <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">
-              Nivel de energia
-            </label>
-            <div className="flex gap-2">
-              {([
-                { value: 'easy', label: 'Facil' },
-                { value: 'medium', label: 'Medio' },
-                { value: 'heavy', label: 'Pesado' },
-              ] as const).map(({ value, label }) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setForm((f) => ({ ...f, energy: value }))}
-                  className={[
-                    'flex-1 py-2 rounded-btn text-xs font-semibold transition-all',
-                    form.energy === value
-                      ? 'bg-accent-blue text-white'
-                      : 'bg-bg-surface border-subtle text-text-secondary hover:text-text-primary',
-                  ].join(' ')}
-                >
-                  {label}
-                </button>
-              ))}
+              {/* Contador de caracteres */}
+              {form.title.length > 200 && (
+                <span className="ml-auto text-xs text-text-muted">{form.title.length}/300</span>
+              )}
             </div>
           </div>
-        )}
 
-        {/* Acoes */}
-        <div className="flex gap-3 pt-1">
-          <Button type="button" variant="ghost" onClick={handleClose} fullWidth>
-            Cancelar
-          </Button>
-          <Button type="submit" disabled={!canSubmit} fullWidth>
-            Salvar
-          </Button>
-        </div>
-      </form>
-    </Modal>
+          {/* Divisor */}
+          <div style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.05)', flexShrink: 0 }} />
+
+          {/* Seções de categorização */}
+          <div className="px-5 py-4 space-y-5">
+
+            {/* Tipo */}
+            <div className="flex gap-2">
+              {TYPE_OPTIONS.map(({ value, label, Icon }) => {
+                const active = form.type === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, type: value }))}
+                    className="flex-1 flex flex-col items-center gap-1.5 py-3 rounded-2xl transition-all duration-150"
+                    style={active ? {
+                      backgroundColor: 'rgba(46,111,255,0.15)',
+                      border: '1px solid rgba(46,111,255,0.45)',
+                      boxShadow: '0 0 16px rgba(46,111,255,0.15)',
+                    } : {
+                      backgroundColor: 'rgba(255,255,255,0.04)',
+                      border: '1px solid rgba(255,255,255,0.07)',
+                    }}
+                  >
+                    <Icon
+                      size={18}
+                      style={{ color: active ? '#5B9FFF' : '#5A5A6E' }}
+                      strokeWidth={active ? 2.2 : 1.8}
+                    />
+                    <span
+                      className="text-xs font-semibold"
+                      style={{ color: active ? '#5B9FFF' : '#5A5A6E' }}
+                    >
+                      {label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Área */}
+            <div className="flex gap-2 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
+              {(Object.entries(AREA_CONFIG) as [Area, typeof AREA_CONFIG[Area]][]).map(([area, cfg]) => {
+                const active = form.area === area;
+                return (
+                  <button
+                    key={area}
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, area }))}
+                    className="flex-shrink-0 px-3.5 py-2 rounded-full text-xs font-semibold transition-all duration-150"
+                    style={active ? {
+                      backgroundColor: `${cfg.color}25`,
+                      color: cfg.color,
+                      border: `1px solid ${cfg.color}60`,
+                      boxShadow: `0 0 12px ${cfg.color}20`,
+                    } : {
+                      backgroundColor: 'rgba(255,255,255,0.05)',
+                      color: '#5A5A6E',
+                      border: '1px solid rgba(255,255,255,0.07)',
+                    }}
+                  >
+                    {cfg.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Energia — só para tarefas */}
+            {form.type === 'task' && (
+              <div className="flex gap-2">
+                {ENERGY_OPTIONS.map(({ value, dots, label }) => {
+                  const active = form.energy === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, energy: value }))}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl transition-all duration-150"
+                      style={active ? {
+                        backgroundColor: `${areaColor}20`,
+                        border: `1px solid ${areaColor}50`,
+                      } : {
+                        backgroundColor: 'rgba(255,255,255,0.04)',
+                        border: '1px solid rgba(255,255,255,0.07)',
+                      }}
+                    >
+                      <EnergyDots count={dots} active={active} />
+                      <span
+                        className="text-xs font-semibold"
+                        style={{ color: active ? areaColor : '#5A5A6E' }}
+                      >
+                        {label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Divisor */}
+          <div style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.05)', flexShrink: 0 }} />
+
+          {/* Botão salvar */}
+          <div className="px-5 py-4 safe-bottom">
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="w-full py-4 rounded-2xl text-sm font-bold tracking-wide transition-all duration-150"
+              style={canSubmit ? {
+                background: 'linear-gradient(135deg, #4480FF, #2E6FFF)',
+                color: '#fff',
+                boxShadow: '0 0 24px rgba(46,111,255,0.4), 0 4px 16px rgba(0,0,0,0.3)',
+              } : {
+                backgroundColor: 'rgba(255,255,255,0.06)',
+                color: '#3A3A4A',
+                cursor: 'not-allowed',
+              }}
+            >
+              Salvar
+            </button>
+          </div>
+        </form>
+      </div>
+    </>
   );
 }
