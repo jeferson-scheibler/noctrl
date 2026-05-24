@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { format, isToday, parseISO, differenceInCalendarDays } from 'date-fns';
-import type { Mood, Task, CalendarEvent, Area, AppState } from '../types';
+import { format, isToday, parseISO, differenceInCalendarDays, startOfWeek } from 'date-fns';
+import type { Mood, Task, CalendarEvent, Area, AppState, WeeklyReview } from '../types';
+import { CELEBRATION_MESSAGES } from '../types';
 
 interface Actions {
   setMood: (mood: Mood) => void;
@@ -18,12 +19,21 @@ interface Actions {
   deleteEvent: (id: string) => void;
   updateNotes: (area: Area, content: string) => void;
   setUserName: (name: string) => void;
+  addWeeklyReview: (review: Omit<WeeklyReview, 'id' | 'createdAt' | 'weekDate'>) => void;
+  // Estado efemero de UI — nao persistido
+  celebration: string | null;
+  triggerCelebration: () => void;
+  clearCelebration: () => void;
 }
 
 type Store = AppState & Actions;
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function randomCelebration(): string {
+  return CELEBRATION_MESSAGES[Math.floor(Math.random() * CELEBRATION_MESSAGES.length)];
 }
 
 // localStorage falha silenciosamente em modo anonimo e em alguns browsers embarcados.
@@ -48,12 +58,24 @@ const initialState: AppState = {
   userName: '',
   streakCount: 0,
   lastOpenedDate: null,
+  weeklyReviews: [],
 };
 
 export const useStore = create<Store>()(
   persist(
     (set, get) => ({
       ...initialState,
+
+      // Estado efemero — nao aparece em partialize, nao persiste
+      celebration: null,
+
+      triggerCelebration() {
+        set({ celebration: randomCelebration() });
+      },
+
+      clearCelebration() {
+        set({ celebration: null });
+      },
 
       setMood(mood) {
         const today = format(new Date(), 'yyyy-MM-dd');
@@ -160,6 +182,22 @@ export const useStore = create<Store>()(
         const sanitized = name.trim().slice(0, 50);
         set({ userName: sanitized });
       },
+
+      addWeeklyReview({ wentWell, improve, intention }) {
+        const weekDate = format(
+          startOfWeek(new Date(), { weekStartsOn: 1 }),
+          'yyyy-MM-dd'
+        );
+        const review: WeeklyReview = {
+          id: generateId(),
+          weekDate,
+          wentWell: wentWell.trim().slice(0, 2000),
+          improve: improve.trim().slice(0, 2000),
+          intention: intention.trim().slice(0, 2000),
+          createdAt: new Date().toISOString(),
+        };
+        set((s) => ({ weeklyReviews: [review, ...s.weeklyReviews] }));
+      },
     }),
     {
       name: 'noctrl-storage',
@@ -174,6 +212,7 @@ export const useStore = create<Store>()(
         userName: state.userName,
         streakCount: state.streakCount,
         lastOpenedDate: state.lastOpenedDate,
+        weeklyReviews: state.weeklyReviews,
       }),
     }
   )
@@ -186,9 +225,7 @@ export function useTodayTasks() {
   if (!mood) return pending.slice(0, 3);
 
   if (mood === 'LOW') {
-    return pending
-      .filter((t) => t.energy === 'easy')
-      .slice(0, 3);
+    return pending.filter((t) => t.energy === 'easy').slice(0, 3);
   }
 
   if (mood === 'MEDIUM') {
@@ -217,4 +254,16 @@ export function useMoodValid(): boolean {
   } catch {
     return false;
   }
+}
+
+export function useWeeklyReviewPending(): boolean {
+  const { weeklyReviews } = useStore();
+  const today = new Date();
+  // Domingo = 0. Revisao disponivel aos domingos.
+  if (today.getDay() !== 0) return false;
+  const thisWeek = format(
+    startOfWeek(today, { weekStartsOn: 1 }),
+    'yyyy-MM-dd'
+  );
+  return !weeklyReviews.some((r) => r.weekDate === thisWeek);
 }

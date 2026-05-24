@@ -11,7 +11,7 @@ interface TaskItemProps {
 }
 
 export function TaskItem({ task, showDelete = false }: TaskItemProps) {
-  const { toggleTask, deleteTask } = useStore();
+  const { toggleTask, deleteTask, triggerCelebration } = useStore();
   const [justDone, setJustDone] = useState(false);
 
   const areaConfig = AREA_CONFIG[task.area];
@@ -20,7 +20,8 @@ export function TaskItem({ task, showDelete = false }: TaskItemProps) {
   function handleToggle() {
     if (!task.done) {
       setJustDone(true);
-      setTimeout(() => toggleTask(task.id), 400);
+      triggerCelebration();
+      setTimeout(() => toggleTask(task.id), 420);
     } else {
       toggleTask(task.id);
     }
@@ -45,7 +46,9 @@ export function TaskItem({ task, showDelete = false }: TaskItemProps) {
             : 'border-text-muted hover:border-accent-blue',
         ].join(' ')}
       >
-        {(task.done || justDone) && <Check size={11} strokeWidth={3} className="text-white" />}
+        {(task.done || justDone) && (
+          <Check size={11} strokeWidth={3} className="text-white" />
+        )}
       </button>
 
       <div className="flex-1 min-w-0">
@@ -58,8 +61,8 @@ export function TaskItem({ task, showDelete = false }: TaskItemProps) {
           {task.title}
         </p>
         <div className="flex items-center gap-1.5 mt-0.5">
-          <Badge color={areaConfig.color} className="text-xs">{areaConfig.label}</Badge>
-          <Badge className="text-xs">{energyConfig.label}</Badge>
+          <Badge color={areaConfig.color}>{areaConfig.label}</Badge>
+          <Badge>{energyConfig.label}</Badge>
         </div>
       </div>
 

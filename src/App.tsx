@@ -5,8 +5,10 @@ import { MoodCheckin } from './components/MoodCheckin';
 import { Dashboard } from './components/Dashboard';
 import { WeekCalendar } from './components/WeekCalendar';
 import { IdeaInbox } from './components/IdeaInbox';
+import { FocusMode } from './components/FocusMode';
 import { Layout } from './pages/Layout';
 import { AreaPage } from './pages/AreaPage';
+import { CelebrationToast } from './components/ui/Toast';
 
 function AppRoutes() {
   const { resetMoodIfNewDay } = useStore();
@@ -17,12 +19,20 @@ function AppRoutes() {
   }, [resetMoodIfNewDay]);
 
   if (!moodValid) {
-    return <MoodCheckin />;
+    return (
+      <>
+        <MoodCheckin />
+        <CelebrationToast />
+      </>
+    );
   }
 
   return (
     <BrowserRouter>
+      <CelebrationToast />
       <Routes>
+        {/* Modo Foco fora do Layout para tela limpa sem navbar */}
+        <Route path="/focus" element={<FocusMode />} />
         <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/calendar" element={<WeekCalendar />} />

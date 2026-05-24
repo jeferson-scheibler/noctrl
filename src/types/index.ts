@@ -28,6 +28,15 @@ export interface CalendarEvent {
   notes?: string;
 }
 
+export interface WeeklyReview {
+  id: string;
+  weekDate: string; // segunda-feira da semana (yyyy-MM-dd)
+  wentWell: string;
+  improve: string;
+  intention: string;
+  createdAt: string;
+}
+
 export interface DayMood {
   date: string;
   mood: Mood;
@@ -43,6 +52,7 @@ export interface AppState {
   userName: string;
   streakCount: number;
   lastOpenedDate: string | null;
+  weeklyReviews: WeeklyReview[];
 }
 
 export const AREA_CONFIG: Record<Area, { label: string; color: string; colorVar: string }> = {
@@ -63,3 +73,11 @@ export const MOOD_CONFIG: Record<Mood, { label: string; description: string; ico
   MEDIUM: { label: 'Energia media', description: 'Foco no essencial', icon: 'battery-medium' },
   LOW: { label: 'Baixa energia', description: 'Dia de coisas pequenas', icon: 'battery-low' },
 };
+
+export const CELEBRATION_MESSAGES = [
+  'Feito. Voce sabia que ia conseguir.',
+  'Mais uma. Voce esta no caminho certo.',
+  'Concluido. Cada passo conta.',
+  'Feito. Simples assim.',
+  'Boa. Continua.',
+] as const;
